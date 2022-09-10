@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/src/foundation/key.dart';
 import 'package:flutter/src/widgets/framework.dart';
+import 'package:mysqltodo/DBHelper.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -11,8 +12,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<Map> contacts = [
-    {"Name": "Amos", "Phone": "07031250097"},
+    {"name": "Amos", "phone": "07031250097"},
   ];
+
+  getContact() {
+    DbHelper dbHelper = DbHelper();
+    return dbHelper.selectContact();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -21,31 +28,58 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Container(
         padding: EdgeInsets.symmetric(horizontal: 5.0, vertical: 5.0),
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: contacts.length,
-          itemBuilder: (context, index) {
-            return InkWell(
-              onTap: () {
-                updateContact(context);
+        child: FutureBuilder(
+          future: getContact(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(
+                child: CircularProgressIndicator(),
+              );
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text("Error"),
+              );
+            }
+            if (!snapshot.hasData) {
+              return Center(child: Text("No Data"));
+            }
+            List contacts = snapshot.data as List;
+            return ListView.builder(
+              shrinkWrap: true,
+              itemCount: contacts.length,
+              itemBuilder: (context, index) {
+                return InkWell(
+                  onTap: () {
+                    updateContact(context, contacts[index]);
+                  },
+                  child: Card(
+                    elevation: 10,
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        child: Text(contacts[index]["name"].substring(0, 1)),
+                      ),
+                      title: Text(contacts[index]["name"].trim()),
+                      subtitle: Text(contacts[index]["phone"].trim()),
+                      trailing: IconButton(
+                        icon: Icon(Icons.cancel),
+                        onPressed: () async {
+                          DbHelper dbHelper = DbHelper();
+                          int result = await dbHelper.delete(contacts[index]);
+                          if (result > 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("Success")));
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("No Data")));
+                          }
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  ),
+                );
               },
-              child: Card(
-                elevation: 10,
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text(contacts[index]["Name"].substring(0, 1)),
-                  ),
-                  title: Text(contacts[index]["Name"].trim()),
-                  subtitle: Text(contacts[index]["Phone"].trim()),
-                  trailing: IconButton(
-                    icon: Icon(Icons.cancel),
-                    onPressed: () {
-                      contacts.removeAt(index);
-                      setState(() {});
-                    },
-                  ),
-                ),
-              ),
             );
           },
         ),
@@ -62,10 +96,11 @@ class _HomeScreenState extends State<HomeScreen> {
   addContact(BuildContext context) {
     GlobalKey<FormState> _formKey = GlobalKey<FormState>();
     String? name, phone;
+    DbHelper dbHelper = DbHelper();
     AlertDialog alert = AlertDialog(
       title: Text("Add Contact"),
       content: Container(
-        height: 200,
+        height: 300,
         child: Form(
           key: _formKey,
           child: Column(
@@ -110,14 +145,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 10,
               ),
               MaterialButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_formKey.currentState!.validate()) {
                       _formKey.currentState!.save();
                       Map<String, dynamic> userDetails = {};
-                      userDetails["Name"] = name;
-                      userDetails["Phone"] = phone;
-                      // print(userDetails);
-                      contacts.add(userDetails);
+                      userDetails["name"] = name;
+                      userDetails["phone"] = phone;
+                      int result = await dbHelper.saveContact(userDetails);
+                      if (result > 0) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text("Success")));
+                      } else {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text("No Data")));
+                      }
                       setState(() {});
                       Navigator.pop(context);
                     }
@@ -139,18 +180,23 @@ class _HomeScreenState extends State<HomeScreen> {
         });
   }
 
-  updateContact(BuildContext context) {
+  updateContact(BuildContext context, Map contact) {
     GlobalKey<FormState> _formKey = GlobalKey<FormState>();
     String? name, phone;
+    var nameCTRL = TextEditingController();
+    var phoneCTRL = TextEditingController();
+    nameCTRL.text = contact["name"];
+    phoneCTRL.text = contact["phone"];
     AlertDialog update = AlertDialog(
       title: Text("Update Contact"),
       content: Container(
-        height: 200,
+        height: 300,
         child: Form(
           key: _formKey,
           child: Column(
             children: [
               TextFormField(
+                controller: nameCTRL,
                 decoration: InputDecoration(
                   label: Text("Name"),
                   border: OutlineInputBorder(
@@ -169,6 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               SizedBox(height: 10),
               TextFormField(
+                controller: phoneCTRL,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   label: Text("Phone"),
@@ -190,14 +237,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 10,
               ),
               MaterialButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_formKey.currentState!.validate()) {
                       _formKey.currentState!.save();
                       Map<String, dynamic> userDetails = {};
-                      userDetails["Name"] = name;
-                      userDetails["Phone"] = phone;
-                      // print(userDetails);
-                      contacts.replaceRange;
+                      userDetails["name"] = name;
+                      userDetails["phone"] = phone;
+                      DbHelper dbHelper = DbHelper();
+                      int result = await dbHelper.update(userDetails);
+                      if (result > 0) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text("Success")));
+                      } else {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text("No Data")));
+                      }
                       setState(() {});
                       Navigator.pop(context);
                     }
